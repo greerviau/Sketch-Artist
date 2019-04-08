@@ -16,7 +16,7 @@ Download the CelebA dataset [here](https://www.kaggle.com/jessicali9530/celeba-d
 
 In CGAN.py add data directory to CelebA object
 ```
-celebA = CelebA(output_size, channel, sample_size, batch_size, <path-to-data>)
+celebA = CelebA(output_size, channel, sample_size, batch_size, data_dir=<path-to-data>)
 ```
 
 ## Usage
