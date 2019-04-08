@@ -1,11 +1,11 @@
 # Sketch-Artist
 
+## Overview
+A Conditional GAN that generates faces based on a description
+
 ## TO-DO
 * Increase sample size (currently 1000)
 * Improve model architecture for generator and discriminator
-
-## Overview
-A Conditional GAN that generates faces based on a description
 
 ## Instalation
 Git clone the repository and ```cd``` into the directory
