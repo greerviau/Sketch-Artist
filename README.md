@@ -1,7 +1,7 @@
 # Sketch-Artist
 
 ## Overview
-A Conditional GAN that generates faces based on a description
+A Conditional GAN that generates human faces based on a description. This project was created for CSC 340 (Artificial Intelligence) final project. 
 
 ## TO-DO
 * Increase sample size (currently 1000)
