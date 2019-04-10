@@ -1,5 +1,6 @@
 import os, csv, cv2, random
 import numpy as np
+import tensorflow as tf
 
 class CelebA(object):
 
@@ -27,7 +28,9 @@ class CelebA(object):
             for row in readCSV:
                 data.append(row)
             del data[0]
-            random.shuffle(data[:20000])
+            seg = data[:20000]
+            random.shuffle(seg)
+            data[:20000] = seg
             images_dir = os.path.join(self.data_dir,'img_align_celeba')
             for i in range(1,self.sample_size):
                 img = data[i][0]

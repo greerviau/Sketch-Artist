@@ -57,12 +57,21 @@ def train():
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
+    start_epoch = 1
+
+    if not os.path.exists(model_dir+version):
+        os.makedirs(model_dir+version)
+    else:
+        saver.restore(sess, model_dir+version+'/'+version+'.ckpt')
+        with open(model_dir+version+'/epoch.txt', 'r') as ep:
+            start_epoch = int(ep.read()) + 1
+
     print('Sample Size: {}'.format(sample_size))
     print('Batch Size: {} - Batches per Epoch: {} - Max Epochs: {}'.format(batch_size, batch_num, max_epochs))
     print('Starting training...')
     sample_noise = np.random.uniform(-1.0, 1.0, size=[batch_size, z_dim]).astype(np.float32)
     _, sample_labels = celebA.get_next_batch(0)
-    for i in range(1,max_epochs+1):
+    for i in range(start_epoch,max_epochs+1):
         print('Epoch {}/{}'.format(i,max_epochs))
         for j in range(batch_num):
             d_iters = 5
@@ -79,10 +88,11 @@ def train():
             for k in range(g_iters):
                 _, gLoss = sess.run([trainer_g, g_loss], feed_dict={z: train_noise, y: real_labels, phase: True})
         print('')
-        if i%100 == 0:
-            if not os.path.exists(model_dir+version):
-                os.makedirs(model_dir+version)
+        if i%50 == 0:
             saver.save(sess,model_dir+version+'/'+version+'.ckpt')
+            with open(model_dir+version+'/epoch.txt', 'w') as ep:
+                ep.write(str(i))
+            print('Model Saved | train:[{}] | d_loss: {:.2f} | g_loss: {:.2f}'.format(i, dLoss, gLoss))
 
         if i%5 == 0:
             if not os.path.exists(sample_dir+version):
@@ -96,7 +106,7 @@ def train():
             imgtest = imgtest * 255.0
             save_images(imgtest, [4,4], sample_dir+version+'/epoch_'+str(i)+'.jpg')
 
-            print('Sample Saved | train:[{}] | d_loss:{:.2f} | g_loss:{:.2f}'.format(i, dLoss, gLoss))
+            print('Sample Saved | train:[{}] | d_loss: {:.2f} | g_loss: {:.2f}'.format(i, dLoss, gLoss))
 
     coord.request_stop()
     coord.join(threads)
@@ -172,7 +182,7 @@ def generator(z, y, phase):
 
         conv6 = tf.layers.conv2d_transpose(conv5, channel, kernel_size=[5,5], strides=[2,2], padding='SAME', kernel_initializer=tf.truncated_normal_initializer(stddev=0.02), name='conv6')
 
-        conv6 = tf.nn.sigmoid(conv6, name='act6')
+        conv6 = tf.nn.tanh(conv6, name='act6')
         return conv6
 
 def discriminator(images, y, phase, reuse=False):
