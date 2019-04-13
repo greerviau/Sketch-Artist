@@ -14,7 +14,6 @@ class CelebA(object):
         self.image_size = op_size
         self.data_dir = data_dir
         self.y_dim = 11
-        self.data, self.data_y = self.load_data()
 
     def load_data(self):
         cur_dir = os.getcwd()
@@ -28,9 +27,11 @@ class CelebA(object):
             for row in readCSV:
                 data.append(row)
             del data[0]
+            '''
             seg = data[:20000]
             random.shuffle(seg)
             data[:20000] = seg
+            '''
             images_dir = os.path.join(self.data_dir,'img_align_celeba')
             for i in range(1,self.sample_size):
                 img = data[i][0]
@@ -63,7 +64,8 @@ class CelebA(object):
         np.random.seed(seed)
         np.random.shuffle(y)
 
-        return X / 255. , y
+        self.data = X / 255.
+        self.data_y = y
 
     def get_next_batch(self, iter_num):
         ro_num = len(self.data) / self.batch_size - 1
@@ -80,11 +82,13 @@ class CelebA(object):
         return self.data[int(iter_num % ro_num) * self.batch_size: int(iter_num % ro_num + 1) * self.batch_size], self.data_y[int(iter_num % ro_num) * self.batch_size: int(iter_num % ro_num + 1) * self.batch_size]
 
     def text_to_vector(self, text):
+        text = text.lower()
         key_words = {'bald':1.,
                     'black hair':1.,
                     'blond hair':1.,
                     'brown hair':1.,
                     'glasses':1.,
+                    'goatee':1.,
                     'gray hair':1.,
                     'male':1.,
                     'mustache':1.,
@@ -92,9 +96,10 @@ class CelebA(object):
                     'white':1.
                     }
         vec = np.ones(self.y_dim)*-1
-        for key, i in enumerate(key_words, 0):
+        for i, key in enumerate(key_words, 0):
             if key in text:
                 vec[i] = key_words[key]
+        #print(vec)
         batch_vector = np.tile(vec,(self.batch_size,1))
         return batch_vector
 
