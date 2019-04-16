@@ -7,7 +7,7 @@ A Tensorflow implementation of a Conditional GAN that generates human faces base
 * Increase sample size (currently 1000)
 * Improve model architecture for generator and discriminator
 
-## Instalation
+## Installation
 Git clone the repository and ```cd``` into the directory
 ```
 git clone https://github.com/greerviau/Sketch-Artist.git && cd Sketch-Artist
