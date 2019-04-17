@@ -1,25 +1,25 @@
 import os, cv2, sys
 from utils import *
-from ops import conv_cond_concat
+from ops import *
 import tensorflow as tf
 import numpy as np
 
 class CGAN(object):
 
     def __init__(self):
-        self.sample_size = 500
-        self.sample_dir = 'samples/'
-        self.output_size = 128
+        self.sample_size = 5000
+        self.output_size = 64
         self.channel = 3
         self.learning_rate = 0.0002
-        self.batch_size = 16
+        self.batch_size = 64
         self.max_epochs = 5000
         self.celebA = CelebA(self.output_size, self.channel, self.sample_size, self.batch_size)
         self.z_dim = 100
         self.y_dim = self.celebA.y_dim
-        self.version = 'face_gen_v3'
+        self.version = 'face_gen_v7'
         self.log_dir = '/tmp/tensorflow_cgan/'+self.version
         self.model_dir = 'model/'
+        self.sample_dir = 'samples/'
         self.test_dir = 'test/'
 
         self.images = tf.placeholder('float', shape=[self.batch_size,self.output_size, self.output_size, self.channel], name='real_images')
@@ -32,6 +32,7 @@ class CGAN(object):
         self.fake_images = self.generator(self.z, self.y, self.phase)
 
         real_result, real_logits = self.discriminator(self.images, self.y, self.phase)
+        
         fake_result, fake_logits = self.discriminator(self.fake_images, self.y, self.phase, reuse=True)
 
         d_fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake_result), logits=fake_logits))
@@ -47,7 +48,7 @@ class CGAN(object):
         self.d_vars = [var for var in t_vars if 'dis' in var.name]
         self.g_vars = [var for var in t_vars if 'gen' in var.name]
 
-        self.d_clip = [v.assign(tf.clip_by_value(v, -0.01, 0.01)) for v in self.d_vars]
+        #self.d_clip = [v.assign(tf.clip_by_value(v, -0.01, 0.01)) for v in self.d_vars]
 
         self.saver = tf.train.Saver()
 
@@ -70,35 +71,32 @@ class CGAN(object):
 
             start_epoch = 1
 
-            if not os.path.exists(self.model_dir+self.version):
-                os.makedirs(self.model_dir+self.version)
-            else:
+            if os.path.exists(self.model_dir+self.version):
                 self.saver.restore(sess, self.model_dir+self.version+'/'+self.version+'.ckpt')
                 with open(self.model_dir+self.version+'/epoch.txt', 'r') as ep:
                     start_epoch = int(ep.read()) + 1
 
-            print('Version: {}'.format(self.version))
+            print('\nVersion: {}'.format(self.version))
             print('Sample Size: {}'.format(self.sample_size))
-            print('Batch Size: {} - Batches per Epoch: {} - Max Epochs: {}'.format(self.batch_size, batch_num, self.max_epochs))
-            print('Starting training...')
+            print('Max Epochs: {}'.format(self.max_epochs))
+            print('Batch Size: {}'.format(self.batch_size))
+            print('Batches per Epoch: {}'.format(batch_num))
+            print('Starting training...\n')
             sample_noise = np.random.uniform(-1.0, 1.0, size=[self.batch_size, self.z_dim]).astype(np.float32)
             _, sample_labels = self.celebA.get_next_batch(0)
             for i in range(start_epoch,self.max_epochs+1):
-                print('Epoch {}/{}'.format(i,self.max_epochs))
                 for j in range(batch_num):
-                    d_iters = 5
-                    g_iters = 1
-
                     train_noise = np.random.uniform(-1.0, 1.0, size=[self.batch_size, self.z_dim]).astype(np.float32)
                     train_images, real_labels = self.celebA.get_next_batch(i-1)
 
-                    for k in range(d_iters):
-                        print('\rBatch {}/{} - Itter - {}'.format(j+1,batch_num, k),end='')
-                        sess.run(self.d_clip)
+                    print('\rEpoch {}/{} - Batch {}/{}'.format(i, self.max_epochs, j+1, batch_num),end='')
 
-                        _, dLoss = sess.run([trainer_d, self.d_loss], feed_dict={self.z: train_noise, self.images: train_images, self.y: real_labels, self.phase: True})
-                    for k in range(g_iters):
-                        _, gLoss = sess.run([trainer_g, self.g_loss], feed_dict={self.z: train_noise, self.y: real_labels, self.phase: True})
+                    _, dLoss = sess.run([trainer_d, self.d_loss], feed_dict={self.z: train_noise, self.images: train_images, self.y: real_labels, self.phase: True})
+
+                    #Update generator twice to avoid discriminator convergence
+                    _, gLoss = sess.run([trainer_g, self.g_loss], feed_dict={self.z: train_noise, self.y: real_labels, self.phase: True})
+                    _, gLoss = sess.run([trainer_g, self.g_loss], feed_dict={self.z: train_noise, self.y: real_labels, self.phase: True})
+
                 print('')
                 if i%50 == 0:
                     self.saver.save(sess,self.model_dir+self.version+'/'+self.version+'.ckpt')
@@ -116,7 +114,7 @@ class CGAN(object):
                     #if cv2.waitKey(1) & 0xFF == ord('q'):
                         #break
                     imgtest = imgtest * 255.0
-                    save_images(imgtest, [4,4], self.sample_dir+self.version+'/epoch_'+str(i)+'.jpg')
+                    save_images(imgtest, [8,8], self.sample_dir+self.version+'/epoch_'+str(i)+'.jpg')
 
                     print('Sample Saved [epoch_{}.jpg]'.format(i))
 
@@ -132,7 +130,7 @@ class CGAN(object):
                 sess.run(init)
 
                 self.saver.restore(sess, path+'/'+version+'.ckpt')
-                sample_z = np.random.uniform(1, -1, size=[self.batch_size, self.z_dim])
+                sample_z = np.random.uniform(-1.0, 1.0, size=[self.batch_size, self.z_dim]).astype(np.float32)
                 description = input('Enter a description --> ').lower()
                 description_vec = self.celebA.text_to_vector(description)
 
@@ -142,12 +140,12 @@ class CGAN(object):
                 if not os.path.exists(self.test_dir+version):
                     os.makedirs(self.test_dir+self.version)
 
-                save_images(output, [4,4], self.test_dir+version+'/{}.jpg'.format(description.replace(' ','_')))
+                save_images(output, [8,8], self.test_dir+version+'/{}.jpg'.format(description.replace(' ','_')))
 
                 image = cv2.imread(self.test_dir+version+'/{}.jpg'.format(description.replace(' ','_')))
 
                 cv2.imshow('test', image)
-                if cv2.waitKey(1) and 0xFF == ord('q'):
+                if cv2.waitKey(0) and 0xFF == ord('q'):
                     cv2.destroyAllWindows()
 
                 print('Test Finished')
@@ -156,14 +154,14 @@ class CGAN(object):
 
     def generator(self, z, y, phase):
 
-        f4, f8, f16, f32, f64 = 512, 256, 128, 64, 32
-        s = 8
+        f4, f8, f16, f32 = 512, 256, 128, 64
+        s = 4
 
         with tf.variable_scope('gen') as scope:
             yb = tf.reshape(y, shape=[self.batch_size, 1, 1, self.y_dim])
             z = tf.concat([z, y], 1)
 
-            weight = tf.get_variable('w', shape=[111, s * s * f4], dtype='float', initializer=tf.truncated_normal_initializer(stddev=0.02))
+            weight = tf.get_variable('w', shape=[self.z_dim+self.y_dim, s * s * f4], dtype='float', initializer=tf.truncated_normal_initializer(stddev=0.02))
             bias = tf.get_variable('b', shape=[f4 * s * s], dtype='float', initializer=tf.constant_initializer(0.0))
             flat = tf.add(tf.matmul(z, weight), bias, name='flat')
 
@@ -182,7 +180,7 @@ class CGAN(object):
 
             conv3 = tf.layers.conv2d_transpose(conv2, f16, kernel_size=[5,5], strides=[2,2], padding='SAME', kernel_initializer=tf.truncated_normal_initializer(stddev=0.02), name='conv3')
             conv3 = tf.contrib.layers.batch_norm(conv3, is_training=phase, epsilon=1e-5, decay=0.9, updates_collections=None, scope='bn3')
-            conv3 = tf.nn.leaky_relu(conv2, name='act3')
+            conv3 = tf.nn.leaky_relu(conv3, name='act3')
 
             conv3 = conv_cond_concat(conv3, yb)
 
@@ -192,16 +190,10 @@ class CGAN(object):
 
             conv4 = conv_cond_concat(conv4, yb)
 
-            conv5 = tf.layers.conv2d_transpose(conv4, f64, kernel_size=[5,5], strides=[2,2], padding='SAME', kernel_initializer=tf.truncated_normal_initializer(stddev=0.02), name='conv5')
-            conv5 = tf.contrib.layers.batch_norm(conv5, is_training=phase, epsilon=1e-5, decay=0.9, updates_collections=None, scope='bn5')
-            conv5 = tf.nn.leaky_relu(conv5, name='act5')
+            conv5 = tf.layers.conv2d_transpose(conv4, self.channel, kernel_size=[5,5], strides=[2,2], padding='SAME', kernel_initializer=tf.truncated_normal_initializer(stddev=0.02), name='conv6')
 
-            conv5 = conv_cond_concat(conv5, yb)
-
-            conv6 = tf.layers.conv2d_transpose(conv5, self.channel, kernel_size=[5,5], strides=[2,2], padding='SAME', kernel_initializer=tf.truncated_normal_initializer(stddev=0.02), name='conv6')
-
-            conv6 = tf.nn.tanh(conv6, name='act6')
-            return conv6
+            conv5 = tf.nn.tanh(conv5, name='act6')
+            return conv5
 
     def discriminator(self, images, y, phase, reuse=False):
 
