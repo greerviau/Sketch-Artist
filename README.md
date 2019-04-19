@@ -15,6 +15,7 @@ git clone https://github.com/greerviau/Sketch-Artist.git && cd Sketch-Artist
 Download the CelebA dataset [here](https://www.kaggle.com/jessicali9530/celeba-dataset) and extract
 
 In CGAN.py add data directory to CelebA object
+* Make sure that directory contains ```list_attr_celeba.csv``` and ```img_align_celeba```
 ```
 celebA = CelebA(output_size, channel, sample_size, batch_size, data_dir=<path-to-data>)
 ```
