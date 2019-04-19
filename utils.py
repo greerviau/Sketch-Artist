@@ -4,11 +4,12 @@ import tensorflow as tf
 
 class CelebA(object):
 
-    def __init__(self, op_size, channel, sample_size, batch_size, data_dir='D:/Data/celeba/'):
+    def __init__(self, op_size, channel, sample_size, batch_size, crop, data_dir='D:/Data/celeba/'):
 
         self.dataname = 'CelebA'
         self.sample_size = sample_size
         self.batch_size = batch_size
+        self.crop = crop
         self.dims = op_size*op_size
         self.shape = [op_size,op_size,channel]
         self.image_size = op_size
@@ -32,6 +33,13 @@ class CelebA(object):
                 img = data[i][0]
                 print('\rLoading: {}'.format(img), end='')
                 image = cv2.imread(os.path.join(images_dir,img))
+                if self.crop:
+                    h, w, c = image.shape
+                    #crop 4/6ths of the image
+                    cr_h = h//6
+                    cr_w = w//6
+                    crop_image = image[cr_h:h-cr_h,cr_w:w-cr_w]
+                    image = crop_image
                 image = cv2.resize(image, (self.image_size, self.image_size))
                 X.append(image)
                 features = np.zeros(self.y_dim)
@@ -63,7 +71,7 @@ class CelebA(object):
         self.data_y = y
 
     def get_next_batch(self, iter_num):
-        ro_num = len(self.data) / self.batch_size - 1
+        ro_num = self.sample_size // self.batch_size - 1
 
         if iter_num % ro_num == 0:
             length = len(self.data)
