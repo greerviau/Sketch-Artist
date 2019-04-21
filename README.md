@@ -1,7 +1,7 @@
 # Sketch-Artist
 
 ## Overview
-A Tensorflow implementation of a Conditional GAN that generates human faces based on a description. This project was created for CSC 340 (Artificial Intelligence) final project. 
+A Tensorflow implementation of a Conditional GAN that generates human faces based on a description. This project was created for my CSC 340 (Artificial Intelligence) final project. Hi Kaur :)
 
 ## Installation
 Git clone the repository and ```cd``` into the directory
