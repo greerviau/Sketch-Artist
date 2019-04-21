@@ -4,7 +4,7 @@
 A Tensorflow implementation of a Conditional GAN that generates human faces based on a description. This project was created for my CSC 340 (Artificial Intelligence) final project. Hi Kaur :)
 
 ## TO-DO
-* Still does not produce samples accurate to condition yet
+* Does not produce samples accurate to condition yet
 
 ## Installation
 Git clone the repository and ```cd``` into the directory
