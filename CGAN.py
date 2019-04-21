@@ -14,7 +14,9 @@ class CGAN(object):
         self.learning_rate = 0.0002
         self.batch_size = 64
         self.max_epochs = 1000
-        self.save_samples = 5
+        self.d_itters = 1
+        self.g_itters = 2
+        self.save_samples = 1
         self.save_model = 10
         self.celebA = CelebA(self.output_size, self.channel, self.sample_size, self.batch_size, self.crop)
         self.z_dim = 100
@@ -25,17 +27,17 @@ class CGAN(object):
         self.sample_dir = 'samples/'
         self.test_dir = 'test/'
 
-        self.images = tf.placeholder('float', shape=[self.batch_size,self.output_size, self.output_size, self.channel], name='real_images')
+        self.real_images = tf.placeholder('float', shape=[self.batch_size,self.output_size, self.output_size, self.channel], name='real_images')
         self.z = tf.placeholder('float', shape=[self.batch_size,self.z_dim], name='noise_vec')
         self.y = tf.placeholder('float', shape=[self.batch_size,self.y_dim], name='condition_vec')
 
     def build_model(self):
 
-        self.fake_images = self.generator(self.z, self.y)
+        self.fake_images, self.z_prediction = self.generator(self.z, self.y)
 
         self.gen_sampler = self.sampler(self.z, self.y)
 
-        real_result, real_logits = self.discriminator(self.images, self.y)
+        real_result, real_logits = self.discriminator(self.real_images, self.y)
 
         fake_result, fake_logits = self.discriminator(self.fake_images, self.y, reuse=True)
 
@@ -47,11 +49,11 @@ class CGAN(object):
 
         self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake_result), logits=fake_logits))
 
+        self.z_loss = tf.reduce_mean(tf.square(self.z - self.z_prediction), name='z_prediction_loss')
+
         t_vars = tf.trainable_variables()
         self.d_vars = [var for var in t_vars if 'dis' in var.name]
         self.g_vars = [var for var in t_vars if 'gen' in var.name]
-
-        self.d_clip = [v.assign(tf.clip_by_value(v, -0.01, 0.01)) for v in self.d_vars]
 
         self.saver = tf.train.Saver()
 
@@ -59,8 +61,9 @@ class CGAN(object):
 
         self.celebA.load_data()
 
-        trainer_d = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.5, beta2=0.9).minimize(self.d_loss, var_list=self.d_vars)
-        trainer_g = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.5, beta2=0.9).minimize(self.g_loss, var_list=self.g_vars)
+        trainer_d = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.5).minimize(self.d_loss, var_list=self.d_vars)
+        trainer_g = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.5).minimize(self.g_loss, var_list=self.g_vars)
+        trainer_z = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.5).minimize(self.z_loss, var_list=self.g_vars)
 
         batch_num = self.sample_size // self.batch_size
 
@@ -88,30 +91,36 @@ class CGAN(object):
             print('Starting training...\n')
             sample_noise = np.random.uniform(-1, 1, size=[self.batch_size, self.z_dim]).astype(np.float32)
             _, sample_labels = self.celebA.get_next_batch(0)
-            for i in range(start_epoch,self.max_epochs+1):
-                for j in range(batch_num):
+            for epoch in range(start_epoch,self.max_epochs+1):
+
+                dLoss_avg = []
+                gLoss_avg = []
+
+                for batch in range(batch_num):
                     train_noise = np.random.uniform(-1, 1, size=[self.batch_size, self.z_dim]).astype(np.float32)
-                    train_images, real_labels = self.celebA.get_next_batch(i-1)
+                    train_images, real_labels = self.celebA.get_next_batch(batch)
 
-                    d_itters = 1
-                    for _ in range(d_itters):
-                        _, dLoss = sess.run([trainer_d, self.d_loss], feed_dict={self.z: train_noise, self.images: train_images, self.y: real_labels})
-                        sess.run(self.d_clip)
+                    for d in range(self.d_itters):
+                        _, dLoss = sess.run([trainer_d, self.d_loss], feed_dict={self.z: train_noise, self.real_images: train_images, self.y: real_labels})
+                        dLoss_avg.append(dLoss)
 
-                    g_itters = 1
-                    for _ in range(g_itters):
+                    for g in range(self.g_itters):
                         _, gLoss = sess.run([trainer_g, self.g_loss], feed_dict={self.z: train_noise, self.y: real_labels})
+                        gLoss_avg.append(gLoss)
 
-                    print('\rEpoch {}/{} - Batch {}/{} - D_loss {:.2f} - G_loss {:.2f}'.format(i, self.max_epochs, j+1, batch_num, dLoss, gLoss),end='')
+                    #If experiencing mode collapse, run optimization on z prediction
+                    #_, zLoss = sess.run([trainer_z, self.z_loss], feed_dict={self.z: train_noise, self.y: real_labels})
+
+                    print('\rEpoch {}/{} - Batch {}/{} - D_loss {:.3f} - G_loss {:.3f}   '.format(epoch, self.max_epochs, batch+1, batch_num, avg(dLoss_avg), avg(gLoss_avg)), end='')
 
                 print('')
-                if i%self.save_model == 0:
+                if epoch%self.save_model == 0:
                     self.saver.save(sess,self.model_dir+self.version+'/'+self.version+'.ckpt')
                     with open(self.model_dir+self.version+'/epoch.txt', 'w') as ep:
-                        ep.write(str(i))
-                    print('Model Saved | Epoch:[{}] | D_loss:[{:.2f}] | G_loss:[{:.2f}]'.format(i, dLoss, gLoss))
+                        ep.write(str(epoch))
+                    print('Model Saved | Epoch:[{}] | D_loss:[{:.2f}] | G_loss:[{:.2f}]'.format(epoch, dLoss, gLoss))
 
-                if i%self.save_samples == 0:
+                if epoch%self.save_samples == 0:
                     if not os.path.exists(self.sample_dir+self.version):
                         os.makedirs(self.sample_dir+self.version)
                     imgtest = sess.run(self.gen_sampler, feed_dict={self.z: sample_noise,  self.y: sample_labels})
@@ -121,9 +130,9 @@ class CGAN(object):
                     #if cv2.waitKey(1) & 0xFF == ord('q'):
                         #break
                     imgtest = imgtest * 255.0
-                    save_images(imgtest, [8,8], self.sample_dir+self.version+'/epoch_'+str(i)+'.jpg')
+                    save_images(imgtest, [8,8], self.sample_dir+self.version+'/epoch_'+str(epoch)+'.jpg')
 
-                    print('Sample Saved [epoch_{}.jpg]'.format(i))
+                    print('Sample Saved [epoch_{}.jpg]'.format(epoch))
 
             coord.request_stop()
             coord.join(threads)
@@ -141,7 +150,7 @@ class CGAN(object):
                 description = input('Enter a description --> ').lower()
                 description_vec = self.celebA.text_to_vector(description)
 
-                output = sess.run(self.fake_images, feed_dict={self.z: sample_z, self.y: description_vec, self.phase: False})
+                output = sess.run(self.fake_images, feed_dict={self.z: sample_z, self.y: description_vec})
 
                 output = output * 255.0
                 if not os.path.exists(self.test_dir+self.version):
@@ -194,7 +203,9 @@ class CGAN(object):
             conv4 = batch_norm(conv4, scope='d_bn4')
             conv4 = tf.nn.leaky_relu(conv4, name='d_act4')
 
-            flat = fully_connected(tf.reshape(conv4, [self.batch_size, -1]), 1, 'd_full')
+            flat = tf.reshape(conv4, [self.batch_size, -1])
+
+            flat = fully_connected(flat, 1, 'd_full1')
 
             return tf.nn.sigmoid(flat), flat
 
@@ -212,7 +223,7 @@ class CGAN(object):
             yb = tf.reshape(y, shape=[self.batch_size, 1, 1, self.y_dim])
             z = tf.concat([z, y], 1)
 
-            flat = fully_connected(z, k*8*s_h16*s_w16, 'g_flat', with_w=False)
+            flat = fully_connected(z, k*8*s_h16*s_w16, 'g_flat')
 
             conv1 = tf.reshape(flat, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
             conv1 = batch_norm(conv1, scope='g_bn1')
@@ -221,28 +232,33 @@ class CGAN(object):
             #Concat label to tensor
             conv1 = conv_cond_concat(conv1, yb)
 
-            conv2 = deconv2d(conv1, [self.batch_size, s_h8, s_w8, k*4], name='g_conv2', with_w=False)
+            conv2 = deconv2d(conv1, [self.batch_size, s_h8, s_w8, k*4], name='g_conv2')
             conv2 = batch_norm(conv2, scope='g_bn2')
             conv2 = tf.nn.relu(conv2, name='g_act2')
 
             conv2 = conv_cond_concat(conv2, yb)
 
-            conv3 = deconv2d(conv2, [self.batch_size, s_h4, s_w4, k*2], name='g_conv3', with_w=False)
+            conv3 = deconv2d(conv2, [self.batch_size, s_h4, s_w4, k*2], name='g_conv3')
             conv3 = batch_norm(conv3,  scope='g_bn3')
             conv3 = tf.nn.relu(conv3, name='g_act3')
 
             conv3 = conv_cond_concat(conv3, yb)
 
-            conv4 = deconv2d(conv3, [self.batch_size, s_h2, s_w2, k], name='g_conv4', with_w=False)
+            conv4 = deconv2d(conv3, [self.batch_size, s_h2, s_w2, k], name='g_conv4')
             conv4 = batch_norm(conv4, scope='g_bn4')
             conv4 = tf.nn.relu(conv4, name='g_act4')
 
             conv4 = conv_cond_concat(conv4, yb)
 
-            conv5 = deconv2d(conv4, [self.batch_size, s_h, s_w, self.channel], name='g_conv5', with_w=False)
+            conv5 = deconv2d(conv4, [self.batch_size, s_h, s_w, self.channel], name='g_conv5')
 
             conv5 = tf.nn.tanh(conv5, name='g_act5')
-            return conv5
+
+            #Auto encoder to predict noise
+            z_pred = tf.nn.relu(flat, name='z_act1')
+            z_pred = fully_connected(z_pred, self.z_dim, 'z_flat1')
+
+            return conv5, z_pred
 
     def sampler(self, z, y):
 
@@ -259,7 +275,7 @@ class CGAN(object):
             yb = tf.reshape(y, shape=[self.batch_size, 1, 1, self.y_dim])
             z = tf.concat([z, y], 1)
 
-            flat = fully_connected(z, k*8*s_h16*s_w16, 'g_flat', with_w=False)
+            flat = fully_connected(z, k*8*s_h16*s_w16, 'g_flat')
 
             conv1 = tf.reshape(flat, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
             conv1 = batch_norm(conv1, scope='g_bn1', train=False)
@@ -268,25 +284,25 @@ class CGAN(object):
             #Concat label to tensor
             conv1 = conv_cond_concat(conv1, yb)
 
-            conv2 = deconv2d(conv1, [self.batch_size, s_h8, s_w8, k*4], name='g_conv2', with_w=False)
+            conv2 = deconv2d(conv1, [self.batch_size, s_h8, s_w8, k*4], name='g_conv2')
             conv2 = batch_norm(conv2, scope='g_bn2', train=False)
             conv2 = tf.nn.relu(conv2, name='g_act2')
 
             conv2 = conv_cond_concat(conv2, yb)
 
-            conv3 = deconv2d(conv2, [self.batch_size, s_h4, s_w4, k*2], name='g_conv3', with_w=False)
+            conv3 = deconv2d(conv2, [self.batch_size, s_h4, s_w4, k*2], name='g_conv3')
             conv3 = batch_norm(conv3,  scope='g_bn3', train=False)
             conv3 = tf.nn.relu(conv3, name='g_act3')
 
             conv3 = conv_cond_concat(conv3, yb)
 
-            conv4 = deconv2d(conv3, [self.batch_size, s_h2, s_w2, k], name='g_conv4', with_w=False)
+            conv4 = deconv2d(conv3, [self.batch_size, s_h2, s_w2, k], name='g_conv4')
             conv4 = batch_norm(conv4, scope='g_bn4', train=False)
             conv4 = tf.nn.relu(conv4, name='g_act4')
 
             conv4 = conv_cond_concat(conv4, yb)
 
-            conv5 = deconv2d(conv4, [self.batch_size, s_h, s_w, self.channel], name='g_conv5', with_w=False)
+            conv5 = deconv2d(conv4, [self.batch_size, s_h, s_w, self.channel], name='g_conv5')
 
             conv5 = tf.nn.tanh(conv5, name='g_act5')
             return conv5

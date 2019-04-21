@@ -135,3 +135,6 @@ def save_images(images, size, image_path):
 def imsave(images, size, path):
     image = np.squeeze(merge(images, size))
     return cv2.imwrite(path, image)
+
+def avg(list):
+    return sum(list)/len(list)

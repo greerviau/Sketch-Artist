@@ -21,7 +21,7 @@ def conv2d(input_, output_dim, k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02, name="co
 
         return conv
 
-def deconv2d(input_, output_shape, k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02, name="deconv2d", with_w=False):
+def deconv2d(input_, output_shape, k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02, name='deconv2d'):
     with tf.variable_scope(name):
         # filter : [height, width, output_channels, in_channels]
         w = tf.get_variable('w', [k_h, k_w, output_shape[-1], input_.get_shape()[-1]], initializer=tf.random_normal_initializer(stddev=stddev))
@@ -36,12 +36,9 @@ def deconv2d(input_, output_shape, k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02, name
         biases = tf.get_variable('biases', [output_shape[-1]], initializer=tf.constant_initializer(0.0))
         deconv = tf.reshape(tf.nn.bias_add(deconv, biases), deconv.get_shape())
 
-        if with_w:
-            return deconv, w, biases
-        else:
-            return deconv
+        return deconv
 
-def fully_connected(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=False):
+def fully_connected(input_, output_size, scope=None, stddev=0.02, bias_start=0.0):
     shape = input_.get_shape().as_list()
 
     with tf.variable_scope(scope or "Linear"):
@@ -52,10 +49,8 @@ def fully_connected(input_, output_size, scope=None, stddev=0.02, bias_start=0.0
             err.args = err.args + (msg,)
             raise
         bias = tf.get_variable("bias", [output_size], initializer=tf.constant_initializer(bias_start))
-        if with_w:
-            return tf.matmul(input_, matrix) + bias, matrix, bias
-        else:
-            return tf.matmul(input_, matrix) + bias
+
+        return tf.matmul(input_, matrix) + bias
 
 def batch_norm(input , scope="scope" , train=True):
     return tf.contrib.layers.batch_norm(input , epsilon=1e-5, decay=0.9 , scale=True, scope=scope , is_training=train , updates_collections=None)
