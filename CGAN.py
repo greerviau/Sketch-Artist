@@ -13,7 +13,7 @@ class CGAN(object):
         self.channel = 3
         self.learning_rate = 0.0002
         self.batch_size = 64
-        self.max_epochs = 1000
+        self.max_epochs = 50
         self.d_itters = 1
         self.g_itters = 2
         self.save_samples = 1
@@ -21,7 +21,7 @@ class CGAN(object):
         self.celebA = CelebA(self.output_size, self.channel, self.sample_size, self.batch_size, self.crop)
         self.z_dim = 100
         self.y_dim = self.celebA.y_dim
-        self.version = 'face_gen_v7'
+        self.version = 'face_gen_FINAL'
         self.log_dir = '/tmp/tensorflow_cgan/'+self.version
         self.model_dir = 'model/'
         self.sample_dir = 'samples/'
@@ -49,7 +49,7 @@ class CGAN(object):
 
         self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake_result), logits=fake_logits))
 
-        self.z_loss = tf.reduce_mean(tf.square(self.z - self.z_prediction), name='z_prediction_loss')
+        self.z_loss = tf.reduce_mean(tf.square(tf.concat([self.z, self.y], 1) - self.z_prediction), name='z_prediction_loss')
 
         t_vars = tf.trainable_variables()
         self.d_vars = [var for var in t_vars if 'dis' in var.name]
@@ -141,16 +141,20 @@ class CGAN(object):
 
         path = self.model_dir+self.version
         if os.path.exists(path):
-            init = tf.initialize_all_variables()
             with tf.Session() as sess:
-                sess.run(init)
+                coord = tf.train.Coordinator()
+                threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+
+                sess.run(tf.global_variables_initializer())
+                sess.run(tf.local_variables_initializer())
 
                 self.saver.restore(sess, path+'/'+self.version+'.ckpt')
                 sample_z = np.random.uniform(-1, 1, size=[self.batch_size, self.z_dim]).astype(np.float32)
                 description = input('Enter a description --> ').lower()
                 description_vec = self.celebA.text_to_vector(description)
+                #print(description_vec)
 
-                output = sess.run(self.fake_images, feed_dict={self.z: sample_z, self.y: description_vec})
+                output = sess.run(self.gen_sampler, feed_dict={self.z: sample_z, self.y: description_vec})
 
                 output = output * 255.0
                 if not os.path.exists(self.test_dir+self.version):
@@ -165,10 +169,13 @@ class CGAN(object):
                     cv2.destroyAllWindows()
 
                 print('Test Finished')
+                
+                coord.request_stop()
+                coord.join(threads)
         else:
             print('ERROR - [Model {} not found] - Path {}'.format(self.version, path))
 
-    def discriminator(self, images, y, reuse=False):
+    def discriminator(self, image, y, reuse=False):
 
         with tf.variable_scope('dis') as scope:
             k = 64
@@ -180,34 +187,40 @@ class CGAN(object):
             yb = tf.reshape(y, shape=[self.batch_size, 1, 1, self.y_dim])
 
             #Concat label to tensor
-            concat_data = conv_cond_concat(images, yb)
+            image = conv_cond_concat(image, yb)
 
-            conv1 = conv2d(concat_data, k, name='d_conv1')
-            conv1 = tf.nn.leaky_relu(conv1, name='d_act1')
+            conv1 = conv2d(image, k, name='d_conv1')
+            conv1 = tf.nn.leaky_relu(conv1, name='d_conv1_act')
 
             conv1 = conv_cond_concat(conv1, yb)
 
             conv2 = conv2d(conv1, k*2, name='d_conv2')
-            conv2 = batch_norm(conv2, scope='d_bn2')
-            conv2 = tf.nn.leaky_relu(conv2, name='d_act2')
+            conv2 = batch_norm(conv2, scope='d_conv2_bn')
+            conv2 = tf.nn.leaky_relu(conv2, name='d_conv2_act')
 
             conv2 = conv_cond_concat(conv2, yb)
 
             conv3 = conv2d(conv2, k*4, name='d_conv3')
-            conv3 = batch_norm(conv3, scope='d_bn3')
-            conv3 = tf.nn.leaky_relu(conv3, name='d_act3')
+            conv3 = batch_norm(conv3, scope='d_conv3_bn')
+            conv3 = tf.nn.leaky_relu(conv3, name='d_conv3_act')
 
             conv3 = conv_cond_concat(conv3, yb)
 
             conv4 = conv2d(conv3, k*8, name='d_conv4')
-            conv4 = batch_norm(conv4, scope='d_bn4')
-            conv4 = tf.nn.leaky_relu(conv4, name='d_act4')
+            conv4 = batch_norm(conv4, scope='d_conv4_bn')
+            conv4 = tf.nn.leaky_relu(conv4, name='d_conv4_act')
 
             flat = tf.reshape(conv4, [self.batch_size, -1])
+            flat = tf.concat([flat, y] ,1)
 
-            flat = fully_connected(flat, 1, 'd_full1')
+            full1 = fully_connected(flat, 1024, 'd_full1')
+            full1 = batch_norm(full1, scope='d_full1_bn')
+            full1 = tf.nn.leaky_relu(full1, name='d_full1_act')
+            full1 = tf.concat([full1, y], 1)
 
-            return tf.nn.sigmoid(flat), flat
+            full2 = fully_connected(full1, 1, 'd_full2')
+
+            return tf.nn.sigmoid(full2, name='d_full2_act'), full2
 
     def generator(self, z, y):
 
@@ -223,40 +236,47 @@ class CGAN(object):
             yb = tf.reshape(y, shape=[self.batch_size, 1, 1, self.y_dim])
             z = tf.concat([z, y], 1)
 
-            flat = fully_connected(z, k*8*s_h16*s_w16, 'g_flat')
+            full1 = fully_connected(z, 1024, 'g_full1')
+            full1 = batch_norm(full1, scope='g_full1_bn')
+            full1 = tf.nn.relu(full1, name='g_full1_act')
+            full1 = tf.concat([full1, y], 1)
 
-            conv1 = tf.reshape(flat, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
-            conv1 = batch_norm(conv1, scope='g_bn1')
-            conv1 = tf.nn.relu(conv1, name='g_act1')
+            full2 = fully_connected(full1, k*8*s_h16*s_w16, 'g_full2')
+            full2 = batch_norm(full2, scope='g_full2_bn')
+            full2 = tf.nn.relu(full2, name='g_full2_act')
+
+            conv1 = tf.reshape(full2, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
 
             #Concat label to tensor
             conv1 = conv_cond_concat(conv1, yb)
 
             conv2 = deconv2d(conv1, [self.batch_size, s_h8, s_w8, k*4], name='g_conv2')
-            conv2 = batch_norm(conv2, scope='g_bn2')
-            conv2 = tf.nn.relu(conv2, name='g_act2')
+            conv2 = batch_norm(conv2, scope='g_conv2_bn')
+            conv2 = tf.nn.relu(conv2, name='g_conv2_act')
 
             conv2 = conv_cond_concat(conv2, yb)
 
             conv3 = deconv2d(conv2, [self.batch_size, s_h4, s_w4, k*2], name='g_conv3')
-            conv3 = batch_norm(conv3,  scope='g_bn3')
-            conv3 = tf.nn.relu(conv3, name='g_act3')
+            conv3 = batch_norm(conv3,  scope='g_conv3_bn')
+            conv3 = tf.nn.relu(conv3, name='g_conv3_act')
 
             conv3 = conv_cond_concat(conv3, yb)
 
             conv4 = deconv2d(conv3, [self.batch_size, s_h2, s_w2, k], name='g_conv4')
-            conv4 = batch_norm(conv4, scope='g_bn4')
-            conv4 = tf.nn.relu(conv4, name='g_act4')
+            conv4 = batch_norm(conv4, scope='g_conv4_bn')
+            conv4 = tf.nn.relu(conv4, name='g_conv4_act')
 
             conv4 = conv_cond_concat(conv4, yb)
 
             conv5 = deconv2d(conv4, [self.batch_size, s_h, s_w, self.channel], name='g_conv5')
 
-            conv5 = tf.nn.tanh(conv5, name='g_act5')
+            conv5 = tf.nn.tanh(conv5, name='g_conv5_act')
 
             #Auto encoder to predict noise
-            z_pred = tf.nn.relu(flat, name='z_act1')
-            z_pred = fully_connected(z_pred, self.z_dim, 'z_flat1')
+            z_pred = fully_connected(full2, 1024, 'z_full1')
+            z_pred = batch_norm(z_pred, scope='z_full1_bn')
+            z_pred = tf.nn.relu(z_pred, name='z_full1_act')
+            z_pred = fully_connected(z_pred, self.z_dim+self.y_dim, 'z_full2')
 
             return conv5, z_pred
 
@@ -275,36 +295,41 @@ class CGAN(object):
             yb = tf.reshape(y, shape=[self.batch_size, 1, 1, self.y_dim])
             z = tf.concat([z, y], 1)
 
-            flat = fully_connected(z, k*8*s_h16*s_w16, 'g_flat')
+            full1 = fully_connected(z, 1024, 'g_full1')
+            full1 = batch_norm(full1, scope='g_full1_bn')
+            full1 = tf.nn.relu(full1, name='g_full1_act')
+            full1 = tf.concat([full1, y], 1)
 
-            conv1 = tf.reshape(flat, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
-            conv1 = batch_norm(conv1, scope='g_bn1', train=False)
-            conv1 = tf.nn.relu(conv1, name='g_act1')
+            full2 = fully_connected(full1, k*8*s_h16*s_w16, 'g_full2')
+            full2 = batch_norm(full2, scope='g_full2_bn')
+            full2 = tf.nn.relu(full2, name='g_full2_act')
+
+            conv1 = tf.reshape(full2, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
 
             #Concat label to tensor
             conv1 = conv_cond_concat(conv1, yb)
 
             conv2 = deconv2d(conv1, [self.batch_size, s_h8, s_w8, k*4], name='g_conv2')
-            conv2 = batch_norm(conv2, scope='g_bn2', train=False)
-            conv2 = tf.nn.relu(conv2, name='g_act2')
+            conv2 = batch_norm(conv2, scope='g_conv2_bn')
+            conv2 = tf.nn.relu(conv2, name='g_conv2_act')
 
             conv2 = conv_cond_concat(conv2, yb)
 
             conv3 = deconv2d(conv2, [self.batch_size, s_h4, s_w4, k*2], name='g_conv3')
-            conv3 = batch_norm(conv3,  scope='g_bn3', train=False)
-            conv3 = tf.nn.relu(conv3, name='g_act3')
+            conv3 = batch_norm(conv3,  scope='g_conv3_bn')
+            conv3 = tf.nn.relu(conv3, name='g_conv3_act')
 
             conv3 = conv_cond_concat(conv3, yb)
 
             conv4 = deconv2d(conv3, [self.batch_size, s_h2, s_w2, k], name='g_conv4')
-            conv4 = batch_norm(conv4, scope='g_bn4', train=False)
-            conv4 = tf.nn.relu(conv4, name='g_act4')
+            conv4 = batch_norm(conv4, scope='g_conv4_bn')
+            conv4 = tf.nn.relu(conv4, name='g_conv4_act')
 
             conv4 = conv_cond_concat(conv4, yb)
 
             conv5 = deconv2d(conv4, [self.batch_size, s_h, s_w, self.channel], name='g_conv5')
 
-            conv5 = tf.nn.tanh(conv5, name='g_act5')
+            conv5 = tf.nn.tanh(conv5, name='g_conv5_act')
             return conv5
 
 if __name__ == "__main__":

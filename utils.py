@@ -14,7 +14,7 @@ class CelebA(object):
         self.shape = [op_size,op_size,channel]
         self.image_size = op_size
         self.data_dir = data_dir
-        self.y_dim = 10
+        self.y_dim = 6
 
     def load_data(self):
         cur_dir = os.getcwd()
@@ -27,6 +27,7 @@ class CelebA(object):
             data = []
             for row in readCSV:
                 data.append(row)
+            #print(data[0])
             del data[0]
             images_dir = os.path.join(self.data_dir,'img_align_celeba')
             for i in range(self.sample_size):
@@ -43,17 +44,17 @@ class CelebA(object):
                 image = cv2.resize(image, (self.image_size, self.image_size))
                 X.append(image)
                 features = np.zeros(self.y_dim)
-                features[0] = int(data[i][5])        #Bald
-                features[1] = int(data[i][9])        #Black hair
-                features[2] = int(data[i][10])       #Blond hair
-                features[3] = int(data[i][12])       #Brown hair
-                features[4] = int(data[i][18])       #Gray hair
-                features[5] = int(data[i][16])       #Glasses
+                #features[0] = int(data[i][5])        #Bald
+                features[0] = int(data[i][9])        #Black hair
+                features[1] = int(data[i][10])       #Blond hair
+                features[2] = int(data[i][12])       #Brown hair
+                #features[3] = int(data[i][18])       #Gray hair
+                features[3] = int(data[i][16])       #Glasses
                 #features[5] = int(data[i][17])       #Goatee
-                features[6] = int(data[i][21])       #Male
-                features[7] = int(data[i][23])       #Mustache
-                features[8] = int(data[i][25]) * -1  #Beard (invert because in dataset, positive 1 represents no beard)
-                features[9] = int(data[i][27])     #Pale skin
+                features[4] = int(data[i][21])       #Male
+                #features[7] = int(data[i][23])       #Mustache
+                features[5] = int(data[i][25]) * -1  #Beard (invert because in dataset, positive 1 represents no beard)
+                #features[9] = int(data[i][27])     #Pale skin
                 y.append(features)
 
         print('')
@@ -69,6 +70,10 @@ class CelebA(object):
 
         self.data = X / 255.
         self.data_y = y
+        #print(self.data_y[0])
+        #cv2.imshow('frame',self.data[0])
+        #if cv2.waitKey(0) & 0xFF == ord('q'):
+            #cv2.destroyAllWindows()
 
     def get_next_batch(self, iter_num):
         ro_num = self.sample_size // self.batch_size - 1
@@ -86,17 +91,17 @@ class CelebA(object):
 
     def text_to_vector(self, text):
         text = text.lower()
-        key_words = ['bald',
+        key_words = [#'bald',
                     'black hair',
                     'blond hair',
                     'brown hair',
-                    'gray hair',
+                    #'gray hair',
                     'glasses',
                     #'goatee',
                     'male',
-                    'mustache',
+                    #'mustache',
                     'beard',
-                    'white'
+                    #'white'
                     ]
         vec = np.ones(self.y_dim)*-1
         for i, key in enumerate(key_words, 0):
