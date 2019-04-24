@@ -106,7 +106,7 @@ class CelebA(object):
         vec = np.ones(self.y_dim)*-1
         for i, key in enumerate(key_words, 0):
             if key in text:
-                vec[i] = 1.
+                vec[i] = 1
         #print(vec)
         batch_vector = np.tile(vec,(self.batch_size,1))
         return batch_vector
