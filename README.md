@@ -23,7 +23,7 @@ celebA = CelebA(output_size, channel, sample_size, batch_size, crop, data_dir=<p
 
 ```
 python CGAN.py train
-python CGAN.py test <model-version>
+python CGAN.py test
 ```
 
 ## Results
