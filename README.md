@@ -19,6 +19,15 @@ In CGAN.py add data directory to CelebA object
 celebA = CelebA(output_size, channel, sample_size, batch_size, crop, data_dir=<path-to-data>)
 ```
 
+## Label Vector
+The label is a vector with 6 indices each corresponding to a different facial feature
+* Black hair
+* Blond hair
+* Brown hair
+* Glasses
+* Male
+* Beard
+
 ## Usage
 
 ```
