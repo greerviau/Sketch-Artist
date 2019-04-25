@@ -6,6 +6,25 @@ A Tensorflow implementation of a Conditional GAN that generates human faces base
 ## TO-DO
 * Does not produce samples accurate to condition yet
 
+## Label Vector
+The label is a vector with 6 indices each corresponding to a different facial feature
+
+The values for each feature can either be 1 or -1
+* Black hair
+* Blond hair
+* Brown hair
+* Glasses
+* Male
+* Beard
+
+## Generator
+
+![Generator](https://user-images.githubusercontent.com/36581610/56740551-27cf2c00-673f-11e9-9459-ac9cfde16da1.png)
+
+## Discriminator
+
+![Discriminator](https://user-images.githubusercontent.com/36581610/56740614-48978180-673f-11e9-8e22-16d22ff39411.png)
+
 ## Installation
 Git clone the repository and ```cd``` into the directory
 ```
@@ -18,17 +37,6 @@ In CGAN.py add data directory to CelebA object
 ```
 celebA = CelebA(output_size, channel, sample_size, batch_size, crop, data_dir=<path-to-data>)
 ```
-
-## Label Vector
-The label is a vector with 6 indices each corresponding to a different facial feature
-
-The values for each feature can either be 1 or -1
-* Black hair
-* Blond hair
-* Brown hair
-* Glasses
-* Male
-* Beard
 
 ## Usage
 
