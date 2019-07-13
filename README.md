@@ -11,7 +11,7 @@ The label is a vector with 6 indices each corresponding to a different facial fe
 
 The values for each feature can either be 1 or -1
 * Black hair
-* Blond hair
+* Blonde hair
 * Brown hair
 * Glasses
 * Male
