@@ -7,7 +7,7 @@ A Tensorflow implementation of a Conditional GAN that generates human faces base
 * Does not produce samples accurate to condition yet
 
 ## Label Vector
-The label is a vector with 6 indices each corresponding to a different facial feature
+The label is a vector with 5 indices each corresponding to a different facial feature
 
 The values for each feature can either be 1 or -1
 * Black hair
