@@ -13,7 +13,6 @@ The values for each feature can either be 1 or -1
 * Black hair
 * Blonde hair
 * Brown hair
-* Glasses
 * Male
 * Beard
 
