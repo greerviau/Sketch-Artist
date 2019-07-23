@@ -3,6 +3,9 @@ from utils import *
 from ops import *
 import tensorflow as tf
 import numpy as np
+from tqdm import tqdm
+from tkinter import *
+from PIL import ImageTk, Image
 
 class CGAN(object):
 
@@ -10,22 +13,24 @@ class CGAN(object):
         self.sample_size = 20000
         self.output_size = 64
         self.crop = True
+        self.filter = True
         self.channel = 3
         self.learning_rate = 0.0002
         self.batch_size = 64
-        self.max_epochs = 50
+        self.max_epochs = 100
         self.d_itters = 1
-        self.g_itters = 2
-        self.save_samples = 1
+        self.g_itters = 1
+        self.save_mode = 2  #1 = every epoch    2 = every 5 batches
         self.save_model = 10
-        self.celebA = CelebA(self.output_size, self.channel, self.sample_size, self.batch_size, self.crop)
+        self.celebA = CelebA(self.output_size, self.channel, self.sample_size, self.batch_size, self.crop, self.filter)
         self.z_dim = 100
         self.y_dim = self.celebA.y_dim
-        self.version = 'face_gen_FINAL_test'
+        self.version = 'face_gen_per_batch_filtered_4'
         self.log_dir = '/tmp/tensorflow_cgan/'+self.version
         self.model_dir = 'model/'
         self.sample_dir = 'samples/'
         self.test_dir = 'test/'
+        self.sequence_dir = 'image_sequence/'
 
         self.real_images = tf.placeholder('float', shape=[self.batch_size,self.output_size, self.output_size, self.channel], name='real_images')
         self.z = tf.placeholder('float', shape=[self.batch_size,self.z_dim], name='noise_vec')
@@ -33,7 +38,7 @@ class CGAN(object):
 
     def build_model(self):
 
-        self.fake_images = self.generator(self.z, self.y)
+        self.fake_images, self.rec_prediction = self.generator(self.z, self.y)
 
         self.gen_sampler = self.sampler(self.z, self.y)
 
@@ -49,6 +54,8 @@ class CGAN(object):
 
         self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake_result), logits=fake_logits))
 
+        self.z_loss = tf.reduce_mean(tf.square(tf.concat([self.z, self.y], 1) - self.rec_prediction), name='z_prediction_loss')
+
         t_vars = tf.trainable_variables()
         self.d_vars = [var for var in t_vars if 'dis' in var.name]
         self.g_vars = [var for var in t_vars if 'gen' in var.name]
@@ -57,42 +64,49 @@ class CGAN(object):
 
     def train(self):
 
-        self.celebA.load_data()
-
         trainer_d = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.5).minimize(self.d_loss, var_list=self.d_vars)
         trainer_g = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.5).minimize(self.g_loss, var_list=self.g_vars)
+        trainer_z = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.5).minimize(self.z_loss, var_list=self.g_vars)
 
         batch_num = self.sample_size // self.batch_size
 
         with tf.Session() as sess:
-
-            print('\nVersion: {}'.format(self.version))
-            print('Crop: {}'.format(self.crop))
-            print('Sample Size: {}'.format(self.sample_size))
-            print('Max Epochs: {}'.format(self.max_epochs))
-            print('Batch Size: {}'.format(self.batch_size))
-            print('Batches per Epoch: {}'.format(batch_num))
-            print('Starting training...\n')
-
-            coord = tf.train.Coordinator()
-            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
             sess.run(tf.global_variables_initializer())
             sess.run(tf.local_variables_initializer())
 
             start_epoch = 1
             sample_noise = None
+            sample_labels = None
 
             if os.path.exists(self.model_dir+self.version):
                 self.saver.restore(sess, self.model_dir+self.version+'/'+self.version+'.ckpt')
                 with open(self.model_dir+self.version+'/epoch.txt', 'r') as ep:
                     start_epoch = int(ep.read()) + 1
-                    sample_noise = np.load(self.model_dir+self.version+'/sample_noise.npy')
+                self.celebA.load(self.model_dir+self.version)
+                sample_noise = np.load(self.model_dir+self.version+'/sample_noise.npy')
+                sample_labels = np.load(self.model_dir+self.version+'/sample_labels.npy')
+                print('\n===CHECKPOINT RESTORED===')
             else:
+                os.makedirs(self.model_dir+self.version)
+                self.celebA.load_data()
+                self.celebA.save(self.model_dir+self.version)
                 sample_noise = np.random.uniform(-1, 1, size=[self.batch_size, self.z_dim]).astype(np.float32)
+                np.save(self.model_dir+self.version+'/sample_noise.npy', sample_noise)
+                _, sample_labels = self.celebA.get_next_batch(0)
+                np.save(self.model_dir+self.version+'/sample_labels.npy', sample_labels)
 
-            _, sample_labels = self.celebA.get_next_batch(0)
             #print(sample_labels)
+            print('\n===HYPER PARAMS===')
+            print('Version: {}'.format(self.version))
+            print('Crop: {}'.format(self.crop))
+            print('Filter: {}'.format(self.filter))
+            print('Sample Size: {}'.format(self.sample_size))
+            print('Max Epochs: {}'.format(self.max_epochs))
+            print('Batch Size: {}'.format(self.batch_size))
+            print('Batches per Epoch: {}'.format(batch_num))
+            print('Starting training...\n')
+
             for epoch in range(start_epoch,self.max_epochs+1):
 
                 dLoss_avg = []
@@ -108,71 +122,87 @@ class CGAN(object):
 
                     for g in range(self.g_itters):
                         _, gLoss = sess.run([trainer_g, self.g_loss], feed_dict={self.z: train_noise, self.y: real_labels})
+                        sess.run([trainer_z], feed_dict={self.z: train_noise, self.y: real_labels})
                         gLoss_avg.append(gLoss)
 
-
                     print('\rEpoch {}/{} - Batch {}/{} - D_loss {:.3f} - G_loss {:.3f}   '.format(epoch, self.max_epochs, batch+1, batch_num, avg(dLoss_avg), avg(gLoss_avg)), end='')
+
+                    if self.save_mode == 2 and batch%5 == 0:
+                        if not os.path.exists(self.sample_dir+self.version):
+                            os.makedirs(self.sample_dir+self.version)
+                        imgtest = sess.run(self.gen_sampler, feed_dict={self.z: sample_noise,  self.y: sample_labels})
+                        imgtest = imgtest * 255.0
+                        save_images(imgtest, [8,8], self.sample_dir+self.version+'/epoch_'+str(epoch)+'_batch_'+str(batch)+'.jpg')
 
                 print('')
                 if epoch%self.save_model == 0:
                     self.saver.save(sess,self.model_dir+self.version+'/'+self.version+'.ckpt')
                     with open(self.model_dir+self.version+'/epoch.txt', 'w') as ep:
                         ep.write(str(epoch))
-                    np.save(self.model_dir+self.version+'/sample_noise.npy', sample_noise)
-                    print('Model Saved | Epoch:[{}] | D_loss:[{:.2f}] | G_loss:[{:.2f}]'.format(epoch, dLoss, gLoss))
+                    print('Model Saved | Epoch:[{}] | D_loss:[{:.2f}] | G_loss:[{:.2f}]'.format(epoch, avg(dLoss_avg), avg(gLoss_avg)))
 
-                if epoch%self.save_samples == 0:
+                if self.save_mode == 1 and epoch%1 == 0:
                     if not os.path.exists(self.sample_dir+self.version):
                         os.makedirs(self.sample_dir+self.version)
                     imgtest = sess.run(self.gen_sampler, feed_dict={self.z: sample_noise,  self.y: sample_labels})
-                    #print(imgtest.shape)
-                    #print(imgtest[0])
-                    #cv2.imshow('frame',imgtest[0])
-                    #if cv2.waitKey(1) & 0xFF == ord('q'):
-                        #break
                     imgtest = imgtest * 255.0
                     save_images(imgtest, [8,8], self.sample_dir+self.version+'/epoch_'+str(epoch)+'.jpg')
 
                     print('Sample Saved [epoch_{}.jpg]'.format(epoch))
 
-            coord.request_stop()
-            coord.join(threads)
-
     def test(self):
 
         path = self.model_dir+self.version
+
         if os.path.exists(path):
+
             with tf.Session() as sess:
-                coord = tf.train.Coordinator()
-                threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
                 sess.run(tf.global_variables_initializer())
                 sess.run(tf.local_variables_initializer())
 
                 self.saver.restore(sess, path+'/'+self.version+'.ckpt')
-                sample_z = np.random.uniform(-1, 1, size=[self.batch_size, self.z_dim]).astype(np.float32)
-                description = input('Enter a description --> ').lower()
-                description_vec = self.celebA.text_to_vector(description)
-                #print(description_vec)
 
-                output = sess.run(self.gen_sampler, feed_dict={self.z: sample_z, self.y: description_vec})
+                def enter_button(ent):
+                    description = ent.get().lower()
+                    if description != '':
+                        sample_z = np.random.uniform(-1, 1, size=[self.batch_size, self.z_dim]).astype(np.float32)
+                        #description = input('Enter a description --> ').lower()
+                        description_vec = self.celebA.text_to_vector(description)
+                        #print(description_vec)
 
-                output = output * 255.0
-                if not os.path.exists(self.test_dir+self.version):
-                    os.makedirs(self.test_dir+self.version)
+                        output = sess.run(self.gen_sampler, feed_dict={self.z: sample_z, self.y: description_vec})
 
-                save_images(output, [8,8], self.test_dir+self.version+'/{}.jpg'.format(description.replace(' ','_')))
+                        output = output * 255.0
+                        if not os.path.exists(self.test_dir+self.version):
+                            os.makedirs(self.test_dir+self.version)
 
-                image = cv2.imread(self.test_dir+self.version+'/{}.jpg'.format(description.replace(' ','_')))
+                        save_images(output, [8,8], self.test_dir+self.version+'/{}.jpg'.format(description.replace(' ','_')))
 
-                cv2.imshow('test', image)
-                if cv2.waitKey(0) and 0xFF == ord('q'):
-                    cv2.destroyAllWindows()
+                        image = ImageTk.PhotoImage(Image.open(self.test_dir+self.version+'/{}.jpg'.format(description.replace(' ','_'))))
 
-                print('Test Finished')
+                        ent.delete(0, 'end')
 
-                coord.request_stop()
-                coord.join(threads)
+                        panel.configure(image=image)
+                        panel.image = image
+                    else:
+                        print('No Description Given')
+
+                window = Tk()
+                window.title('Sketch Artist')
+                window.configure(background='grey')
+
+                img = ImageTk.PhotoImage(Image.new('RGB', (512, 512)))
+                panel = Label(window, image = img)
+                panel.pack(side = 'top')
+
+                but = Button(window, text='Generate Faces', command=lambda:enter_button(ent))
+                but.pack(side = 'bottom')
+
+                ent = Entry(window, width=50)
+                ent.pack(side = 'bottom')
+
+                mainloop()
         else:
             print('ERROR - [Model {} not found] - Path {}'.format(self.version, path))
 
@@ -230,9 +260,9 @@ class CGAN(object):
             full1 = fully_connected(z, k*8*s_h16*s_w16, 'g_full1')
             full1 = tf.nn.relu(full1, name='g_full1_act1')
             full1 = batch_norm(full1, scope='g_full1_bn')
-            full1 = tf.nn.leaky_relu(full1, name='g_full1_act2')
+            full1_act = tf.nn.leaky_relu(full1, name='g_full1_act2')
 
-            conv1 = tf.reshape(full1, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
+            conv1 = tf.reshape(full1_act, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
 
             conv2 = deconv2d(conv1, [self.batch_size, s_h8, s_w8, k*4], name='g_conv2')
             conv2 = batch_norm(conv2, scope='g_conv2_bn')
@@ -250,7 +280,11 @@ class CGAN(object):
 
             conv5 = tf.nn.tanh(conv5, name='g_conv5_act')
 
-            return conv5
+            #Auto encoder to predict noise
+            z_pred = fully_connected(full1, self.z_dim+self.y_dim, 'z_full')
+            z_pred = tf.nn.tanh(z_pred, name='z_full_act')
+
+            return conv5, z_pred
 
     def sampler(self, z, y):
 
@@ -270,9 +304,9 @@ class CGAN(object):
             full1 = fully_connected(z, k*8*s_h16*s_w16, 'g_full1')
             full1 = tf.nn.relu(full1, name='g_full1_act1')
             full1 = batch_norm(full1, scope='g_full1_bn')
-            full1 = tf.nn.leaky_relu(full1, name='g_full1_act2')
+            full1_act = tf.nn.leaky_relu(full1, name='g_full1_act2')
 
-            conv1 = tf.reshape(full1, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
+            conv1 = tf.reshape(full1_act, shape=[self.batch_size, s_h16, s_h16, k*8], name='g_conv1')
 
             conv2 = deconv2d(conv1, [self.batch_size, s_h8, s_w8, k*4], name='g_conv2')
             conv2 = batch_norm(conv2, scope='g_conv2_bn')
@@ -291,6 +325,20 @@ class CGAN(object):
             conv5 = tf.nn.tanh(conv5, name='g_conv5_act')
             return conv5
 
+    def to_image_sequence(self):
+        samples_dir = self.sample_dir+self.version
+        dir = self.sequence_dir+self.version
+        if not os.path.exists(dir):
+        	os.makedirs(dir)
+        count = 0
+        for i in range(1,101):
+            for j in range(0,311,5):
+                img_name = 'epoch_{}_batch_{}.jpg'.format(i,j)
+                print(img_name)
+                img = cv2.imread(os.path.join(samples_dir,img_name))
+                cv2.imwrite(os.path.join(dir,"frame_{:05d}.jpg".format(count)),img)
+                count+=1
+
 if __name__ == "__main__":
     cgan = CGAN()
     cgan.build_model()
@@ -298,3 +346,5 @@ if __name__ == "__main__":
         cgan.train()
     elif sys.argv[1] == 'test':
         cgan.test()
+    elif sys.argv[1] == 'format':
+        cgan.to_image_sequence()

@@ -1,63 +1,72 @@
-import os, csv, cv2, random
+import os, cv2, random
 import numpy as np
 import tensorflow as tf
+import pandas as pd
 
 class CelebA(object):
 
-    def __init__(self, op_size, channel, sample_size, batch_size, crop, data_dir='D:/Data/celeba/'):
+    def __init__(self, op_size, channel, sample_size, batch_size, crop, filter, data_dir='E:/USB Backup/Data/celeba/'):
 
         self.dataname = 'CelebA'
         self.sample_size = sample_size
         self.batch_size = batch_size
         self.crop = crop
+        self.filter = filter
         self.dims = op_size*op_size
         self.shape = [op_size,op_size,channel]
         self.image_size = op_size
         self.data_dir = data_dir
-        self.y_dim = 6
+        self.y_dim = 5
+        self.data_file = 'list_attr_celeba.csv'
 
     def load_data(self):
+
+        images_dir = os.path.join(self.data_dir,'img_align_celeba')
+
         cur_dir = os.getcwd()
 
         X = []
         y = []
 
-        with open(os.path.join(self.data_dir,'list_attr_celeba.csv')) as csvfile:
-            readCSV = csv.reader(csvfile, delimiter=',')
-            data = []
-            for row in readCSV:
-                data.append(row)
-            #print(data[0])
-            del data[0]
-            images_dir = os.path.join(self.data_dir,'img_align_celeba')
-            for i in range(self.sample_size):
-                img = data[i][0]
-                print('\rLoading: {}'.format(img), end='')
-                image = cv2.imread(os.path.join(images_dir,img))
-                if self.crop:
-                    h, w, c = image.shape
-                    #crop 4/6ths of the image
-                    cr_h = h//6
-                    cr_w = w//6
-                    crop_image = image[cr_h:h-cr_h,cr_w:w-cr_w]
-                    image = crop_image
-                image = cv2.resize(image, (self.image_size, self.image_size))
-                X.append(image)
-                features = np.zeros(self.y_dim)
-                #features[0] = int(data[i][5])        #Bald
-                features[0] = int(data[i][9])        #Black hair
-                features[1] = int(data[i][10])       #Blond hair
-                features[2] = int(data[i][12])       #Brown hair
-                #features[3] = int(data[i][18])       #Gray hair
-                features[3] = int(data[i][16])       #Glasses
-                #features[5] = int(data[i][17])       #Goatee
-                features[4] = int(data[i][21])       #Male
-                #features[7] = int(data[i][23])       #Mustache
-                features[5] = int(data[i][25]) * -1  #Beard (invert because in dataset, positive 1 represents no beard)
-                #features[9] = int(data[i][27])     #Pale skin
-                y.append(features)
+        faceCascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+        data = pd.read_csv(os.path.join(self.data_dir,self.data_file))
 
-        print('')
+        i = 0
+        count = 0
+        print('\n===LOADING DATA===')
+        while count < self.sample_size:
+            img = data['image_id'][i]
+            print('\rLoading: {} - Loaded: {}'.format(img, count), end='')
+            image = cv2.imread(os.path.join(images_dir,img))
+            if self.crop:
+                h, w, c = image.shape
+                #crop 4/6ths of the image
+                cr_h = h//6
+                cr_w = w//6
+                crop_image = image[cr_h:h-cr_h,cr_w:w-cr_w]
+                image = crop_image
+            image = cv2.resize(image, (self.image_size, self.image_size))
+            face = faceCascade.detectMultiScale(image, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30), flags = cv2.CASCADE_SCALE_IMAGE)
+            if type(face) is np.ndarray:
+                features = np.zeros(self.y_dim)
+                features[0] = int(data['Black_Hair'][i])        #Black hair
+                features[1] = int(data['Brown_Hair'][i])        #Brown hair
+                features[2] = int(data['Blond_Hair'][i])        #Blonde hair
+                features[3] = int(data['Male'][i])              #Male
+                features[4] = int(data['No_Beard'][i]) * -1     #Beard (invert because in dataset, positive 1 represents no beard)
+                if sum([1 for i in features[:3] if i == 1]) == 1:
+                    X.append(image)
+                    y.append(features)
+                    count+=1
+            i+=1
+
+        print('\n\n===DATA STATS===')
+        print('Black Hair: ', sum([ 1 for i in y if i[0] == 1]))
+        print('Brown Hair: ', sum([ 1 for i in y if i[1] == 1]))
+        print('Blonde Hair: ', sum([ 1 for i in y if i[2] == 1]))
+        print('Male: ', sum([ 1 for i in y if i[3] == 1]))
+        print('Beard: ', sum([ 1 for i in y if i[4] == 1]))
+
         X = np.array(X)
         y = np.array(y)
 
@@ -70,10 +79,6 @@ class CelebA(object):
 
         self.data = X / 255.
         self.data_y = y
-        #print(self.data_y[0])
-        #cv2.imshow('frame',self.data[0])
-        #if cv2.waitKey(0) & 0xFF == ord('q'):
-            #cv2.destroyAllWindows()
 
     def get_next_batch(self, iter_num):
         ro_num = self.sample_size // self.batch_size - 1
@@ -91,18 +96,11 @@ class CelebA(object):
 
     def text_to_vector(self, text):
         text = text.lower()
-        key_words = [#'bald',
-                    'black hair',
-                    'blond hair',
-                    'brown hair',
-                    #'gray hair',
-                    'glasses',
-                    #'goatee',
+        key_words = ['black hair',
+                    'brown_hair',
+                    'blonde hair',
                     'male',
-                    #'mustache',
-                    'beard',
-                    #'white'
-                    ]
+                    'beard']
         vec = np.ones(self.y_dim)*-1
         for i, key in enumerate(key_words, 0):
             if key in text:
@@ -110,6 +108,14 @@ class CelebA(object):
         #print(vec)
         batch_vector = np.tile(vec,(self.batch_size,1))
         return batch_vector
+
+    def save(self, dir):
+        np.save(dir+'/data.npy', self.data)
+        np.save(dir+'/data_y.npy', self.data_y)
+
+    def load(self, dir):
+        self.data = np.load(dir+'/data.npy')
+        self.data_y = np.load(dir+'/data_y.npy')
 
 def merge(images, size):
     h, w = images.shape[1], images.shape[2]
