@@ -45,7 +45,5 @@ python CGAN.py test
 ```
 
 ## Results
-### After 50 epochs
-![epoch_50](https://user-images.githubusercontent.com/36581610/56628543-3969e400-6618-11e9-8438-12fa05be2e42.jpg)
-
-![celebA](https://user-images.githubusercontent.com/36581610/56629037-150f0700-661a-11e9-89bd-ebfa1f8aa0a4.gif)
+### After 100 epochs
+![epoch_100_batch_310](https://user-images.githubusercontent.com/36581610/61691196-014a6e00-acf9-11e9-88e6-9bd8e48db169.jpg)
