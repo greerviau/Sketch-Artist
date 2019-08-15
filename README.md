@@ -1,7 +1,7 @@
 # Sketch-Artist
 
 ## Overview
-A Tensorflow implementation of a Conditional GAN (Generative Adversarial Network) for generating human faces from a text description. This project was created for my CSC 340 (Artificial Intelligence) final project. Hi Kaur :)
+A Tensorflow implementation of a Conditional GAN (Generative Adversarial Network) for generating human faces from a text description. This project was created for my CSC 340 (Artificial Intelligence) final project.
 
 ### [YouTube Video](https://www.youtube.com/watch?v=KCtoZrOBZ7g&t)
 
